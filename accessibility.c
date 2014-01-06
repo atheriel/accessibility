@@ -3,9 +3,7 @@
 #include <Python.h>
 #include <structmember.h>
 
-#include "AXError.h"
 #include "AXUIElement.h"
-#include "AXValue.h"
 
 /*
  * Intended to allow formatted error messages. Format strings work like
@@ -843,23 +841,23 @@ static PyMethodDef methods[] = {
 };
  
 PyMODINIT_FUNC
-init_accessibility(void) {
+initaccessibility(void) {
 	PyObject* m;
 
     AccessibleElement_type.tp_new = PyType_GenericNew;
     if (PyType_Ready(&AccessibleElement_type) < 0)
     	return;
 
-    m = Py_InitModule3("wm._accessibility", methods, "Extension module that provides access to the Accessibility framework.");
+    m = Py_InitModule3("accessibility", methods, "Extension module that wraps the Accessibility API for Mac OS X.");
 
     Py_INCREF(&AccessibleElement_type);
     PyModule_AddObject(m, "AccessibleElement", (PyObject *) &AccessibleElement_type);
     PyModule_AddObject(m, "DEFAULT_TIMEOUT", PyFloat_FromDouble(0.0));
 
-    InvalidUIElementError = PyErr_NewExceptionWithDoc("wm._accessibility.InvalidUIElementError", InvalidUIElementError_docstring, PyExc_ValueError, NULL);
+    InvalidUIElementError = PyErr_NewExceptionWithDoc("accessibility.InvalidUIElementError", InvalidUIElementError_docstring, PyExc_ValueError, NULL);
     PyModule_AddObject(m, "InvalidUIElementError", InvalidUIElementError);
 
-    APIDisabledError = PyErr_NewExceptionWithDoc("wm._accessibility.APIDisabledError", APIDisabledError_docstring, PyExc_Exception, NULL);
+    APIDisabledError = PyErr_NewExceptionWithDoc("accessibility.APIDisabledError", APIDisabledError_docstring, PyExc_Exception, NULL);
     PyModule_AddObject(m, "APIDisabledError", APIDisabledError);
 
     if (!PyEval_ThreadsInitialized()) {
