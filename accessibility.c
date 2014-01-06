@@ -2,8 +2,7 @@
 #include <string.h>
 #include <Python.h>
 #include <structmember.h>
-
-#include "AXUIElement.h"
+#include <Accessibility.h>
 
 /*
  * Intended to allow formatted error messages. Format strings work like
@@ -66,7 +65,7 @@ typedef struct {
     AXUIElementRef _ref;
     AXObserverRef _obs;
     PyObject * pid;
-    PyObject * _callable;
+    PyObject * callback;
 } AccessibleElement;
 
 static void AccessibleElement_dealloc(AccessibleElement *);
@@ -74,8 +73,6 @@ static PyObject * AccessibleElement_richcompare(PyObject *, PyObject *, int);
 static int AccessibleElement_contains(AccessibleElement *, PyObject *);
 static PyObject * AccessibleElement_subscript(AccessibleElement *, PyObject *);
 static int AccessibleElement_ass_subscript(AccessibleElement *, PyObject *, PyObject *);
-
-static PyObject * AccessibleElement_add_notification(AccessibleElement *, PyObject *);
 
 PyDoc_STRVAR(keys_docstring, "keys()\n\n\
 Retrieves a list of attribute names available for this element.");
@@ -164,6 +161,8 @@ This is the underlying method called when using an AccessibleElement as a dict.\
 
 static PyObject * AccessibleElement_set(AccessibleElement *, PyObject *);
 
+static PyObject * AccessibleElement_set_callback(AccessibleElement *, PyObject *);
+
 PyDoc_STRVAR(set_timeout_docstring, "set_timeout(timeout)\n\n\
 Sets the timeout for requests to the Accessibility API for this element. To \n\
 change the value used for all elements, call this method on the system-wide \n\
@@ -177,6 +176,8 @@ element like so:\n\
 The default value can be restored by passing the ``DEFAULT_TIMEOUT`` value.");
 
 static PyObject * AccessibleElement_set_timeout(AccessibleElement *, PyObject *);
+
+static PyObject * AccessibleElement_watch(AccessibleElement *, PyObject *);
 
 /* Module functions
 ======== */
@@ -193,7 +194,7 @@ static PyObject * is_enabled(PyObject *, PyObject *, PyObject *);
 static PyObject * is_enabled(PyObject *);
 #endif
 
-static PyObject * create_application_ref(PyObject *, PyObject *);
+static PyObject * create_application_ref(PyObject *, PyObject *, PyObject *);
 static PyObject * create_systemwide_ref(PyObject *, PyObject *);
 
 PyDoc_STRVAR(element_at_position_docstring, "element_at_position(x, y, element = None)\n\n\
@@ -347,85 +348,6 @@ static PyObject * AccessibleElement_keys(AccessibleElement * self, PyObject * ar
 
 /* Members
 ======== */
-
-static PyObject * AccessibleElement_add_notification(AccessibleElement * self, PyObject * args) {
-    if (self->pid == Py_None) {
-        PyErr_SetString(PyExc_TypeError, "Must have a PID to watch for notifications.");
-        return NULL;
-    }
-    PyObject * result = NULL;
-    
-    Py_ssize_t attribute_count = PyTuple_Size(args);
-    if (attribute_count > 2) {
-        PyErr_SetString(PyExc_ValueError, "Too many arguments.");
-        return NULL;
-    }
-    // The first argument should be a string
-    PyObject * name = PyTuple_GetItem(args, (Py_ssize_t) 0);
-    if (!name) {
-        return NULL; // PyTuple_GetItem will set an Index error.
-    }
-    if (PyUnicode_Check(name)) { // Handle Unicode strings
-        name = PyUnicode_AsUTF8String(name);
-    }
-    if (!PyString_Check(name)) {    
-        PyErr_SetString(PyExc_TypeError, "Non-string notification names are not permitted.");
-        return NULL;
-    }
-     // Get a string representation of the attribute name
-    const char * name_string = PyString_AsString(name);
-    if (!name_string) {
-        PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
-        return NULL;
-    }
-
-    // The second argument should be a callable
-    PyObject * callable = PyTuple_GetItem(args, (Py_ssize_t) 1);
-    if (!callable) {
-        return NULL; // PyTuple_GetItem will set an Index error.
-    }
-    if (!PyCallable_Check(callable)) {
-        PyErr_SetString(PyExc_TypeError, "Parameter must be callable.");
-        return NULL;
-    }
-    Py_XINCREF(callable);
-    Py_XDECREF(self->_callable);
-    self->_callable = callable;
-
-    // Convert that representation to something Carbon will understand.
-    CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
-
-    if (self->_obs == NULL) {
-        // Get PID
-        pid_t pid;
-        AXError error = AXUIElementGetPid(self->_ref, &pid);
-        if (error != kAXErrorSuccess) {
-            handleAXErrors(error, "pid");
-            return NULL;
-        }
-
-        // Create observer
-        AXObserverRef temp = NULL;
-        error = AXObserverCreate(pid, NotifcationCallback, &temp);
-        if (error != kAXErrorSuccess) {
-            handleAXErrors(error, "observer");
-            return NULL;
-        }
-        self->_obs = temp;
-
-        // Add the observer to the run loop
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(self->_obs), kCFRunLoopDefaultMode);
-    }
-
-    // Add the notification
-    AXError error = AXObserverAddNotification(self->_obs, self->_ref, name_strref, self);
-    if (error != kAXErrorSuccess) {
-        handleAXErrors(error, "notification");
-        return NULL;
-    }
-
-    Py_RETURN_NONE;
-}
 
 static PyObject * AccessibleElement_can_set(AccessibleElement * self, PyObject * args) {
     PyObject * result = NULL;
@@ -682,6 +604,24 @@ static PyObject * AccessibleElement_set(AccessibleElement * self, PyObject * arg
     return result;
 }
 
+static PyObject * AccessibleElement_set_callback(AccessibleElement * self, PyObject * args) {
+    PyObject * callable = NULL;
+    
+    if (!PyArg_ParseTuple(args, "O", &callable))
+        return NULL;
+
+    // The argument should be a callable
+    if (!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "The callback must be callable.");
+        return NULL;
+    }
+    Py_XINCREF(callable);
+    Py_XDECREF(self->callback);
+    self->callback = callable;
+
+    Py_RETURN_NONE;
+}
+
 static PyObject * AccessibleElement_set_timeout(AccessibleElement * self, PyObject * args) {
     float timeout;
 
@@ -698,15 +638,86 @@ static PyObject * AccessibleElement_set_timeout(AccessibleElement * self, PyObje
     }
 }
 
+static PyObject * AccessibleElement_watch(AccessibleElement * self, PyObject * args) {
+    if (self->pid == Py_None) {
+        PyErr_SetString(PyExc_TypeError, "Must have a PID to watch for notifications.");
+        return NULL;
+    }
+
+    PyObject * result = NULL;
+
+    // The observer needs to be initialized before notifications can be watched
+    if (self->_obs == NULL) {
+        // Get PID
+        pid_t pid;
+        AXError error = AXUIElementGetPid(self->_ref, &pid);
+        if (error != kAXErrorSuccess) {
+            handleAXErrors(error, "pid");
+            return NULL;
+        }
+
+        // Create observer
+        AXObserverRef temp = NULL;
+        error = AXObserverCreate(pid, NotifcationCallback, &temp);
+        if (error != kAXErrorSuccess) {
+            handleAXErrors(error, "observer");
+            return NULL;
+        }
+        self->_obs = temp;
+
+        // Add the observer to the run loop
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(self->_obs), kCFRunLoopDefaultMode);
+    }
+    
+    // Since the method accepts an arbitrary number of strings...
+    Py_ssize_t attribute_count = PyTuple_Size(args);
+    
+    for (int i = 0; i < attribute_count; i++) {
+        // The arguments should be strings
+        PyObject * name = PyTuple_GetItem(args, (Py_ssize_t) i);
+        if (!name) {
+            return NULL; // PyTuple_GetItem will set an Index error.
+        }
+        if (PyUnicode_Check(name)) { // Handle Unicode strings
+            name = PyUnicode_AsUTF8String(name);
+        }
+        if (!PyString_Check(name)) {    
+            PyErr_SetString(PyExc_TypeError, "Non-string notification names are not permitted.");
+            return NULL;
+        }
+         // Get a string representation of the notification name
+        const char * name_string = PyString_AsString(name);
+        if (!name_string) {
+            PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
+            return NULL;
+        }
+
+        // Convert that representation to something Carbon will understand.
+        CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
+
+        // Add the notification
+        AXError error = AXObserverAddNotification(self->_obs, self->_ref, name_strref, self);
+        CFRelease(name_strref);
+        
+        if (error != kAXErrorSuccess) {
+            handleAXErrors(name_string, error);
+            return NULL;
+        }
+    }
+
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef AccessibleElement_methods[] = {
     {"keys", (PyCFunction) AccessibleElement_keys, METH_NOARGS, keys_docstring},
-    {"add_notification", (PyCFunction) AccessibleElement_add_notification, METH_VARARGS, ""},
     {"count", (PyCFunction) AccessibleElement_count, METH_VARARGS, count_docstring},
     {"get", (PyCFunction) AccessibleElement_get, METH_VARARGS, get_docstring},
     {"set", (PyCFunction) AccessibleElement_set, METH_VARARGS, set_docstring},
+    {"set_callback", (PyCFunction) AccessibleElement_set_callback, METH_VARARGS, ""},
     {"set_timeout", (PyCFunction) AccessibleElement_set_timeout, METH_VARARGS, set_timeout_docstring},
     {"can_set", (PyCFunction) AccessibleElement_can_set, METH_VARARGS, can_set_docstring},
     {"is_alive", (PyCFunction) AccessibleElement_is_alive, METH_NOARGS, is_alive_docstring},
+    {"watch", (PyCFunction) AccessibleElement_watch, METH_VARARGS, ""},
     {NULL, NULL}
 };
 
@@ -764,26 +775,43 @@ static PyObject * is_enabled(PyObject * self, PyObject * args, PyObject * kwargs
     if (prompt == 1) {
         const void * keys[] = { kAXTrustedCheckOptionPrompt };
         const void * values[] = { kCFBooleanTrue };
-        return AXIsProcessTrustedWithOptions(CFDictionaryCreate(NULL, keys, values, 1, NULL, NULL)) ? Py_True : Py_False;
+        if (AXIsProcessTrustedWithOptions(CFDictionaryCreate(NULL, keys, values, 1, NULL, NULL))){
+            Py_RETURN_TRUE;
+        } else {
+            Py_RETURN_FALSE;
+        }
     } else {
-        return AXIsProcessTrustedWithOptions(NULL) ? Py_True : Py_False;
+        if (AXIsProcessTrustedWithOptions(NULL)) {
+            Py_RETURN_TRUE;
+        } else {
+            Py_RETURN_FALSE;
+        }
     }
 #else
 
 // Use the old system otherwise
 static PyObject * is_enabled(PyObject * self) {
-    return AXAPIEnabled() ? Py_True : Py_False;
+    if (AXAPIEnabled()) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
 #endif
 }
 
 static PyObject * is_trusted(PyObject * self) {
-    return AXIsProcessTrusted() ? Py_True : Py_False;
+    if (AXIsProcessTrusted()) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
 }
 
-static PyObject * create_application_ref(PyObject * self, PyObject * args) {
+static PyObject * create_application_ref(PyObject * self, PyObject * args, PyObject * kwargs) {
+    static char *kwlist [] = {"pid", NULL};
     pid_t pid;
  
-    if (!PyArg_ParseTuple(args, "i", &pid))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i", kwlist, &pid))
         return NULL;
 
 	AXUIElementRef ref = AXUIElementCreateApplication(pid);
@@ -834,7 +862,7 @@ static PyMethodDef methods[] = {
     {"is_enabled", (PyCFunction) is_enabled, METH_NOARGS, "is_enabled()\n\nCheck if accessibility has been enabled on the system."},
 #endif
     {"is_trusted", (PyCFunction) is_trusted, METH_NOARGS, "is_trusted()\n\nCheck if this application is a trusted process."},
-	{"create_application_ref", create_application_ref, METH_VARARGS, "create_application_ref(pid)\n\nCreate an accessibile application with the given PID."},
+	{"create_application_ref", create_application_ref, METH_VARARGS|METH_KEYWORDS, "create_application_ref(pid)\n\nCreate an accessibile application with the given PID."},
 	{"create_systemwide_ref", create_systemwide_ref, METH_NOARGS, "create_systemwide_ref()\n\nGet a system-wide accessible element reference."},
     {"element_at_position", (PyCFunction) element_at_position, METH_VARARGS|METH_KEYWORDS, element_at_position_docstring},
 	{NULL, NULL, 0, NULL}
@@ -880,10 +908,17 @@ static AccessibleElement * elementWithRef(AXUIElementRef * ref) {
     // Sets the pid, which should never change
     pid_t pid;
     AXError error = AXUIElementGetPid(*ref, &pid);
-    self->pid = (error == kAXErrorSuccess) ? PyInt_FromLong(pid) : Py_None;
+    if (error == kAXErrorSuccess) {
+        self->pid = PyInt_FromLong(pid);
+    } else {
+        self->pid = Py_None;
+        Py_INCREF(Py_None);
+    }
 
-    self->_callable = Py_None;
+    // Set the callback to None for now
+    self->callback = Py_None;
     Py_INCREF(Py_None);
+    
     return self;
 }
 
@@ -1031,30 +1066,59 @@ static void NotifcationCallback(AXObserverRef obs, AXUIElementRef ref, CFStringR
     gstate = PyGILState_Ensure();
 
     AccessibleElement * elem = (AccessibleElement *) element;
-    PyObject * args = NULL;
-
-    // The notification is a CFStringRef, so try to decode it to a char *
-    CFIndex length = CFStringGetLength(notification);
-    if (length == 0) {
-        args = Py_BuildValue("(OO)", Py_None, elem);
-    } else { // Non-empty string
-        char * buffer = CFStringGetCStringPtr(notification, kCFStringEncodingUTF8); // Fast way
-        if (!buffer) {
-            // Slow way
-            CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8);
-            buffer = (char *) malloc(maxSize);
-            if (CFStringGetCString(notification, buffer, maxSize, kCFStringEncodingUTF8)) {
-                args = Py_BuildValue("(sO)", buffer, elem);
-            } else {
-                args = Py_BuildValue("(OO)", Py_None, elem);
-            }
-        } else {
-            args = Py_BuildValue("(sO)", buffer, elem);
+    
+    if (elem->callback != Py_None) {
+        PyObject * args = Py_BuildValue("()");
+        PyObject * kwargs = PyDict_New();
+        if (PyDict_SetItem(kwargs, PyString_FromString("element"), elem) == -1) {
+            PyErr_SetString(PyExc_Warning, "The element could not be passed to the callback.");
         }
+
+        // The notification is a CFStringRef, so try to decode it to a char *
+        CFIndex length = CFStringGetLength(notification);
+        if (length == 0) {
+            if (PyDict_SetItem(kwargs, PyString_FromString("notification"), Py_None) == -1) {
+                PyErr_SetString(PyExc_Warning, "The notification type passed to the callback could not be identified.");
+            } else {
+                Py_INCREF(Py_None);
+            }
+        } else { // Non-empty string
+            char * buffer = CFStringGetCStringPtr(notification, kCFStringEncodingUTF8); // Fast way
+            if (!buffer) {
+                // Slow way
+                CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8);
+                buffer = (char *) malloc(maxSize);
+                if (CFStringGetCString(notification, buffer, maxSize, kCFStringEncodingUTF8)) {
+                    if (PyDict_SetItem(kwargs, PyString_FromString("notification"), PyString_FromString(buffer)) == -1) {
+                        PyErr_SetString(PyExc_Warning, "The callback could not be constructed.");
+                    }
+                } else {
+                    if (PyDict_SetItem(kwargs, PyString_FromString("notification"), Py_None) == -1) {
+                        PyErr_SetString(PyExc_Warning, "The notification type passed to the callback could not be identified.");
+                    } else {
+                        Py_INCREF(Py_None);
+                    }
+                }
+            } else {
+                if (PyDict_SetItem(kwargs, PyString_FromString("notification"), PyString_FromString(buffer)) == -1) {
+                    PyErr_SetString(PyExc_Warning, "The callback could not be constructed.");
+                }
+            }
+        }
+        PyObject * result = PyObject_Call(elem->callback, args, kwargs);
+        if (result == NULL) {
+            PyErr_SetString(PyExc_Warning, "The callback could not be completed.");
+        }
+        Py_XDECREF(args);
+        Py_XDECREF(kwargs);
+        Py_XDECREF(result); 
+    } else {
+        PyErr_SetString(PyExc_Exception, "No callback is defined to handle notifications. Be sure to make use of myelement.set_callback(func).");
     }
-    PyObject * result = PyObject_CallObject(elem->_callable, args);
-    Py_XDECREF(args);
-    Py_XDECREF(result);
+
+    if (PyErr_Occurred() != NULL) {
+        PyErr_Print();
+    }
 
     PyGILState_Release(gstate);
 }
