@@ -599,9 +599,26 @@ static PyObject * AccessibleElement_set(AccessibleElement * self, PyObject * arg
 
         result = Py_BuildValue("i", error);
         return result;
+    } else if (CFStringCompare(name_strref, kAXHiddenAttribute, 0) == kCFCompareEqualTo) {
+
+        // For hidden, need a bool
+        PyObject * value = PyTuple_GetItem(args, (Py_ssize_t) 1);
+        if (PyObject_IsTrue(value) == -1) {
+            PyErr_SetString(PyExc_ValueError, "Setting AXHidden requires a bool.");
+            return NULL;
+        }
+        
+        AXError error;
+        if (PyObject_IsTrue(value)) {
+            error = AXUIElementSetAttributeValue(self->_ref, kAXHiddenAttribute, kCFBooleanTrue);
+        } else {
+            error = AXUIElementSetAttributeValue(self->_ref, kAXHiddenAttribute, kCFBooleanFalse);
+        }
+        result = Py_BuildValue("i", error);
+        return result;
     }
 
-    PyErr_SetString(PyExc_NotImplementedError, "Incomplete implementation.");
+    PyErr_SetString(PyExc_NotImplementedError, "Not all attributes can yet be modified.");
     return result;
 }
 
