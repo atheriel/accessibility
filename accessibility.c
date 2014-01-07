@@ -27,16 +27,23 @@ char * formattedMessage(char * format, ...) {
  */
 CFStringRef CFStringFromPyString(PyObject * str, char ** c_string) {
     if (PyUnicode_Check(str)) { // Handle Unicode strings
-        Py_DECREF(str);
         str = PyUnicode_AsUTF8String(str);
     }
-    if (!PyString_Check(str)) {    
+#if PY_MAJOR_VERSION >= 3
+    if (!PyBytes_Check(str)) {
+#else
+    if (!PyString_Check(str)) {
+#endif
         PyErr_SetString(PyExc_TypeError, "Non-string parameters are not permitted.");
         return NULL;
     }
 
     // Get a string representation of the attribute name
+#if PY_MAJOR_VERSION >= 3
+    *c_string = PyBytes_AsString(str);
+#else
     *c_string = PyString_AsString(str);
+#endif
     if (!c_string) {
         PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
         return NULL;
@@ -271,7 +278,11 @@ static void AccessibleElement_dealloc(AccessibleElement * self) {
     // Use CFRelease to release for the AXUIElementRef
     if (self->_ref != NULL) CFRelease(self->_ref);
     Py_XDECREF(self->pid);
+#if PY_MAJOR_VERSION >= 3
+    Py_TYPE(self)->tp_free((PyObject *) self);
+#else
     self->ob_type->tp_free((PyObject *) self);
+#endif
 }
 
 static PyObject * AccessibleElement_richcompare(PyObject * self, PyObject * other, int op) {
@@ -696,13 +707,16 @@ static PyMethodDef AccessibleElement_methods[] = {
 
 static PyMemberDef AccessibleElement_members[] = {
     {"pid", T_OBJECT_EX, offsetof(AccessibleElement, pid), READONLY, "The process ID associated with this element, if it has one."},
-    {NULL, NULL}
+    {NULL, 0, 0, 0, NULL}
 };
 
 static PyTypeObject AccessibleElement_type = {
-    PyObject_HEAD_INIT(NULL)
-    0,                         /*ob_size*/
-    "wm._accessibility.AccessibleElement", /*tp_name*/
+#if PY_MAJOR_VERSION >= 3
+    PyVarObject_HEAD_INIT(NULL, 0)
+#else
+    PyObject_HEAD_INIT(NULL) 0, /*ob_size*/
+#endif
+    "accessibility.AccessibleElement", /*tp_name*/
     sizeof(AccessibleElement), /*tp_basicsize*/
     0,                         /*tp_itemsize*/
     (destructor) AccessibleElement_dealloc, /*tp_dealloc*/
@@ -847,21 +861,41 @@ static PyMethodDef methods[] = {
     {"is_enabled", (PyCFunction) is_enabled, METH_NOARGS, "is_enabled()\n\nCheck if accessibility has been enabled on the system."},
 #endif
     {"is_trusted", (PyCFunction) is_trusted, METH_NOARGS, "is_trusted()\n\nCheck if this application is a trusted process."},
-    {"create_application_ref", create_application_ref, METH_VARARGS|METH_KEYWORDS, "create_application_ref(pid)\n\nCreate an accessibile application with the given PID."},
-    {"create_systemwide_ref", create_systemwide_ref, METH_NOARGS, "create_systemwide_ref()\n\nGet a system-wide accessible element reference."},
+    {"create_application_ref", (PyCFunction) create_application_ref, METH_VARARGS|METH_KEYWORDS, "create_application_ref(pid)\n\nCreate an accessibile application with the given PID."},
+    {"create_systemwide_ref", (PyCFunction) create_systemwide_ref, METH_NOARGS, "create_systemwide_ref()\n\nGet a system-wide accessible element reference."},
     {"element_at_position", (PyCFunction) element_at_position, METH_VARARGS|METH_KEYWORDS, element_at_position_docstring},
     {NULL, NULL, 0, NULL}
 };
- 
-PyMODINIT_FUNC
-initaccessibility(void) {
-    PyObject* m;
+
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef module = {
+    PyModuleDef_HEAD_INIT,
+    "accessibility",
+    "Extension module that wraps the Accessibility API for Mac OS X.",
+    (Py_ssize_t) -1,
+    methods,
+    NULL,
+    NULL,
+    NULL,
+    NULL
+};
+
+PyMODINIT_FUNC PyInit_accessibility(void) {
+    PyObject * m = PyModule_Create(&module);
+#else
+PyMODINIT_FUNC initaccessibility(void) {
+    PyObject * m = Py_InitModule3("accessibility", methods, "Extension module that wraps the Accessibility API for Mac OS X.");
+    if (m == NULL) {
+        return;
+    }
+#endif
 
     AccessibleElement_type.tp_new = PyType_GenericNew;
-    if (PyType_Ready(&AccessibleElement_type) < 0)
-        return;
-
-    m = Py_InitModule3("accessibility", methods, "Extension module that wraps the Accessibility API for Mac OS X.");
+#if PY_MAJOR_VERSION >= 3
+    if (PyType_Ready(&AccessibleElement_type) < 0) return m;
+#else
+    if (PyType_Ready(&AccessibleElement_type) < 0) return;
+#endif
 
     Py_INCREF(&AccessibleElement_type);
     PyModule_AddObject(m, "AccessibleElement", (PyObject *) &AccessibleElement_type);
@@ -876,6 +910,10 @@ initaccessibility(void) {
     if (!PyEval_ThreadsInitialized()) {
         PyEval_InitThreads();
     }
+
+#if PY_MAJOR_VERSION >= 3
+    return m;
+#endif
 }
 
 /* ========
@@ -894,7 +932,11 @@ static AccessibleElement * elementWithRef(AXUIElementRef * ref) {
     pid_t pid;
     AXError error = AXUIElementGetPid(*ref, &pid);
     if (error == kAXErrorSuccess) {
+#if PY_MAJOR_VERSION >= 3
+        self->pid = PyLong_FromLong(pid);
+#else
         self->pid = PyInt_FromLong(pid);
+#endif
     } else {
         self->pid = Py_None;
         Py_INCREF(Py_None);
@@ -1055,14 +1097,21 @@ static void NotifcationCallback(AXObserverRef obs, AXUIElementRef ref, CFStringR
     if (elem->callback != Py_None) {
         PyObject * args = Py_BuildValue("()");
         PyObject * kwargs = PyDict_New();
-        if (PyDict_SetItem(kwargs, PyString_FromString("element"), elem) == -1) {
+#if PY_MAJOR_VERSION >= 3
+        PyObject * element_key = PyBytes_FromString("element");
+        PyObject * notification_key = PyBytes_FromString("notification");
+#else
+        PyObject * element_key = PyString_FromString("element");
+        PyObject * notification_key = PyString_FromString("notification");
+#endif
+        if (PyDict_SetItem(kwargs, element_key, elem) == -1) {
             PyErr_SetString(PyExc_Warning, "The element could not be passed to the callback.");
         }
 
         // The notification is a CFStringRef, so try to decode it to a char *
         CFIndex length = CFStringGetLength(notification);
         if (length == 0) {
-            if (PyDict_SetItem(kwargs, PyString_FromString("notification"), Py_None) == -1) {
+            if (PyDict_SetItem(kwargs, notification_key, Py_None) == -1) {
                 PyErr_SetString(PyExc_Warning, "The notification type passed to the callback could not be identified.");
             } else {
                 Py_INCREF(Py_None);
@@ -1074,18 +1123,28 @@ static void NotifcationCallback(AXObserverRef obs, AXUIElementRef ref, CFStringR
                 CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8);
                 buffer = (char *) malloc(maxSize);
                 if (CFStringGetCString(notification, buffer, maxSize, kCFStringEncodingUTF8)) {
-                    if (PyDict_SetItem(kwargs, PyString_FromString("notification"), PyString_FromString(buffer)) == -1) {
+#if PY_MAJOR_VERSION >= 3
+                    PyObject * buffer_value = PyBytes_FromString(buffer);
+#else
+                    PyObject * buffer_value = PyString_FromString(buffer);
+#endif
+                    if (PyDict_SetItem(kwargs, notification_key, buffer_value) == -1) {
                         PyErr_SetString(PyExc_Warning, "The callback could not be constructed.");
                     }
                 } else {
-                    if (PyDict_SetItem(kwargs, PyString_FromString("notification"), Py_None) == -1) {
+                    if (PyDict_SetItem(kwargs, notification_key, Py_None) == -1) {
                         PyErr_SetString(PyExc_Warning, "The notification type passed to the callback could not be identified.");
                     } else {
                         Py_INCREF(Py_None);
                     }
                 }
             } else {
-                if (PyDict_SetItem(kwargs, PyString_FromString("notification"), PyString_FromString(buffer)) == -1) {
+#if PY_MAJOR_VERSION >= 3
+                PyObject * buffer_value = PyBytes_FromString(buffer);
+#else
+                PyObject * buffer_value = PyString_FromString(buffer);
+#endif
+                if (PyDict_SetItem(kwargs, notification_key, buffer_value) == -1) {
                     PyErr_SetString(PyExc_Warning, "The callback could not be constructed.");
                 }
             }

@@ -10,7 +10,7 @@ else:
 setup(
     name = 'accessibility',
     description = 'Extension module that wraps the Accessibility API for Mac OS X.',
-    version = '0.2.1',
+    version = '0.3.1',
     author = 'Aaron Jacobs',
     author_email = 'atheriel@gmail.com',
     url = 'https://github.com/atheriel/accessibility',
@@ -18,7 +18,8 @@ setup(
     platforms = ['MacOS X'],
     classifiers = [
         'Development Status :: 3 - Alpha',
-        'Programming Language :: Python',
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 3',
         'Programming Language :: Python :: Implementation :: CPython',
         'Environment :: MacOS X :: Carbon',
         'Environment :: MacOS X :: Cocoa',
@@ -37,6 +38,6 @@ setup(
     )],
 
     install_requires = [
-        'docutils>=0.3',
+        # 'docutils>=0.3',
     ]
 )
