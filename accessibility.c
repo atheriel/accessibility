@@ -510,7 +510,8 @@ static PyObject * AccessibleElement_is_alive(AccessibleElement * self, PyObject 
     AXError error = AXUIElementCopyAttributeValue(self->_ref, kAXRoleAttribute, &value);
     if (value != NULL) CFRelease(value);
     
-    return (error == kAXErrorInvalidUIElement) ? Py_False : Py_True;
+    if (error == kAXErrorInvalidUIElement) Py_RETURN_FALSE;
+    else Py_RETURN_TRUE;
 }
 
 static PyObject * AccessibleElement_set(AccessibleElement * self, PyObject * args) {
@@ -815,7 +816,24 @@ static PyObject * create_application_ref(PyObject * self, PyObject * args, PyObj
         return NULL;
 
 	AXUIElementRef ref = AXUIElementCreateApplication(pid);
-	AccessibleElement * result = elementWithRef(&ref);
+    
+    // Just check to see if the element responds to a basic attribute request
+    // This might cause problems in some extreme cases, but it also alleviates
+    // the common mistake of passing in a PID with a typo, only to have a call
+    // fail later.
+    CFTypeRef value = NULL;
+    AXError error = AXUIElementCopyAttributeValue(ref, kAXRoleAttribute, &value);
+    if (value != NULL) CFRelease(value);
+    
+    if (error == kAXErrorAPIDisabled) {
+        PyErr_SetString(APIDisabledError, "This PID does not respond to Accessibility requests -- perhaps Accessibility is not enabled on the system?");
+        return NULL;
+    } else if (error != kAXErrorSuccess) {
+        PyErr_SetString(PyExc_ValueError, "This PID does not seem to be associated with a valid process.");
+        return NULL;
+    }
+	
+    AccessibleElement * result = elementWithRef(&ref);
  
     return (PyObject *) result;
 }
