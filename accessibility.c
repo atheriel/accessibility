@@ -22,6 +22,32 @@ char * formattedMessage(char * format, ...) {
     return strdup(buf);
 }
 
+/*
+ * Converts a Python string to a CFStringRef that Cocoa/Carbon will understand.
+ */
+CFStringRef CFStringFromPyString(PyObject * str, char ** c_string) {
+    if (PyUnicode_Check(str)) { // Handle Unicode strings
+        Py_DECREF(str);
+        str = PyUnicode_AsUTF8String(str);
+    }
+    if (!PyString_Check(str)) {    
+        PyErr_SetString(PyExc_TypeError, "Non-string parameters are not permitted.");
+        return NULL;
+    }
+
+    // Get a string representation of the attribute name
+    *c_string = PyString_AsString(str);
+    if (!c_string) {
+        PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
+        return NULL;
+    }
+
+    // Convert that representation to something Cocoa/Carbon will understand.
+    CFStringRef cf_string = CFStringCreateWithCString(kCFAllocatorDefault, *c_string, kCFStringEncodingUTF8);
+    if (cf_string == NULL) PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting a string argument to a CFStringRef.");
+    return cf_string;
+}
+
 /* ========
     Module API and Docstrings
 ======== */
@@ -194,8 +220,8 @@ static PyObject * is_enabled(PyObject *, PyObject *, PyObject *);
 static PyObject * is_enabled(PyObject *);
 #endif
 
-static PyObject * create_application_ref(PyObject *, PyObject *, PyObject *);
-static PyObject * create_systemwide_ref(PyObject *, PyObject *);
+static AccessibleElement * create_application_ref(PyObject *, PyObject *, PyObject *);
+static AccessibleElement * create_systemwide_ref(PyObject *, PyObject *);
 
 PyDoc_STRVAR(element_at_position_docstring, "element_at_position(x, y, element = None)\n\n\
 Gets the window element at the (x, y) position. If ``element`` is specified, \n\
@@ -207,7 +233,7 @@ element is used instead.\n\
 :param AccessibleElement element: The application element to use as a reference.\n\
 :rval: An :py:class:`AccessibleElement` object referring to a window at the given position.");
 
-static PyObject * element_at_position(PyObject *, PyObject *, PyObject *);
+static AccessibleElement * element_at_position(PyObject *, PyObject *, PyObject *);
 
 /* Module exceptions
 ======== */
@@ -231,7 +257,7 @@ static PyObject * APIDisabledError;
 
 static PyObject * parseCFTypeRef(const CFTypeRef);
 static AccessibleElement * elementWithRef(AXUIElementRef *);
-static void handleAXErrors(char *, AXError);
+static void handleAXErrors(const char *, AXError);
 static void NotifcationCallback(AXObserverRef, AXUIElementRef, CFStringRef, void *);
 
 /* ========
@@ -280,22 +306,12 @@ static PyObject * AccessibleElement_richcompare(PyObject * self, PyObject * othe
 ======== */
 
 static int AccessibleElement_contains(AccessibleElement * self, PyObject * arg) {
-    if (PyUnicode_Check(arg)) { // Handle Unicode strings
-        arg = PyUnicode_AsUTF8String(arg);
-    }
     // The argument should be a string
-    if (!arg || !PyString_Check(arg)) {
-        return 0;
-    }
+    char * name_string = NULL;
+    CFStringRef name_strref = CFStringFromPyString(arg, &name_string);
+    if (!name_strref) return 0;
 
-     // Get a C string representation of the attribute name
-    const char * name_string = PyString_AsString(arg);
-    if (!name_string) {
-        return 0;
-    }
-
-    // Convert C string to CFString and check if the attribute's value can be copied
-    CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
+    // Check if the attribute's value can be copied
     CFTypeRef value = NULL;
     AXError error = AXUIElementCopyAttributeValue(self->_ref, name_strref, &value);
     if (name_strref != NULL) CFRelease(name_strref);
@@ -356,27 +372,13 @@ static PyObject * AccessibleElement_can_set(AccessibleElement * self, PyObject *
         PyErr_SetString(PyExc_ValueError, "Too many arguments.");
         return NULL;
     }
+    
     // The first argument should be a string
     PyObject * name = PyTuple_GetItem(args, (Py_ssize_t) 0);
-    if (!name) {
-        return NULL; // PyTuple_GetItem will set an Index error.
-    }
-    if (PyUnicode_Check(name)) { // Handle Unicode strings
-        name = PyUnicode_AsUTF8String(name);
-    }
-    if (!PyString_Check(name)) {    
-        PyErr_SetString(PyExc_TypeError, "Non-string attribute names are not permitted.");
-        return NULL;
-    }
-     // Get a string representation of the attribute name
-    const char * name_string = PyString_AsString(name);
-    if (!name_string) {
-        PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
-        return NULL;
-    }
-
-    // Convert that representation to something Carbon will understand.
-    CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
+    if (!name) return NULL; // PyTuple_GetItem will set an Index error.
+    char * name_string = NULL;
+    CFStringRef name_strref = CFStringFromPyString(name, &name_string);
+    if (!name_strref) return NULL; // CFStringFromPyString will set an error.
 
     // Check to see if the attribute can be set at all
     Boolean can_set;
@@ -389,6 +391,7 @@ static PyObject * AccessibleElement_can_set(AccessibleElement * self, PyObject *
     }
 
     if (name_strref != NULL) CFRelease(name_strref);
+    Py_XINCREF(result);
     return result;
 }
 
@@ -407,24 +410,12 @@ static PyObject * AccessibleElement_count(AccessibleElement * self, PyObject * a
             if (attribute_count > 1) Py_DECREF(result);
             return NULL; // PyTuple_GetItem will set an Index error.
         }
-        if (PyUnicode_Check(name)) { // Handle Unicode strings
-            name = PyUnicode_AsUTF8String(name);
-        }
-        if (!PyString_Check(name)) {    
+        char * name_string = NULL;
+        CFStringRef name_strref = CFStringFromPyString(name, &name_string);
+        if (!name_strref) {
             if (attribute_count > 1) Py_DECREF(result);
-            PyErr_SetString(PyExc_TypeError, "Non-string attribute names are not permitted.");
-            return NULL;
+            return NULL; // CFStringFromPyString will set an error.
         }
-         // Get a string representation of the attribute name
-        const char * name_string = PyString_AsString(name);
-        if (!name_string) {
-            if (attribute_count > 1) Py_DECREF(result);
-            PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
-            return NULL;
-        }
-
-        // Convert that representation to something Carbon will understand.
-        CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
         
         // Get the count itself
         CFIndex count;
@@ -463,23 +454,12 @@ static PyObject * AccessibleElement_get(AccessibleElement * self, PyObject * arg
             if (attribute_count > 1) Py_DECREF(result);
             return NULL; // PyTuple_GetItem will set an Index error.
         }
-        if (PyUnicode_Check(name)) { // Handle Unicode strings
-            name = PyUnicode_AsUTF8String(name);
-        }
-        if (!PyString_Check(name)) {    
-            PyErr_SetString(PyExc_TypeError, "Non-string attribute names are not permitted.");
+        char * name_string = NULL;
+        CFStringRef name_strref = CFStringFromPyString(name, &name_string);
+        if (!name_strref) {
             if (attribute_count > 1) Py_DECREF(result);
-            return NULL;
+            return NULL; // CFStringFromPyString will set an error.
         }
-         // Get a string representation of the attribute name
-        const char * name_string = PyString_AsString(name);
-        if (!name_string) {
-            PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
-            return NULL;
-        }
-
-        // Convert that representation to something Carbon will understand.
-        CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
         
         // Copy the value
         CFTypeRef value = NULL;
@@ -527,22 +507,12 @@ static PyObject * AccessibleElement_set(AccessibleElement * self, PyObject * arg
     if (!name) {
         return NULL; // PyTuple_GetItem will set an Index error.
     }
-    if (PyUnicode_Check(name)) { // Handle Unicode strings
-        name = PyUnicode_AsUTF8String(name);
+    char * name_string = NULL;
+    CFStringRef name_strref = CFStringFromPyString(name, &name_string);
+    if (!name_strref) {
+        if (attribute_count > 1) Py_DECREF(result);
+        return NULL; // CFStringFromPyString will set an error.
     }
-    if (!PyString_Check(name)) {    
-        PyErr_SetString(PyExc_TypeError, "Non-string attribute names are not permitted.");
-        return NULL;
-    }
-     // Get a string representation of the attribute name
-    const char * name_string = PyString_AsString(name);
-    if (!name_string) {
-        PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
-        return NULL;
-    }
-
-    // Convert that representation to something Carbon will understand.
-    CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
 
     // Check to see if the attribute can be set at all
     Boolean can_set;
@@ -662,15 +632,13 @@ static PyObject * AccessibleElement_watch(AccessibleElement * self, PyObject * a
         return NULL;
     }
 
-    PyObject * result = NULL;
-
     // The observer needs to be initialized before notifications can be watched
     if (self->_obs == NULL) {
         // Get PID
         pid_t pid;
         AXError error = AXUIElementGetPid(self->_ref, &pid);
         if (error != kAXErrorSuccess) {
-            handleAXErrors(error, "pid");
+            handleAXErrors("pid", error);
             return NULL;
         }
 
@@ -678,7 +646,7 @@ static PyObject * AccessibleElement_watch(AccessibleElement * self, PyObject * a
         AXObserverRef temp = NULL;
         error = AXObserverCreate(pid, NotifcationCallback, &temp);
         if (error != kAXErrorSuccess) {
-            handleAXErrors(error, "observer");
+            handleAXErrors("observer", error);
             return NULL;
         }
         self->_obs = temp;
@@ -696,22 +664,9 @@ static PyObject * AccessibleElement_watch(AccessibleElement * self, PyObject * a
         if (!name) {
             return NULL; // PyTuple_GetItem will set an Index error.
         }
-        if (PyUnicode_Check(name)) { // Handle Unicode strings
-            name = PyUnicode_AsUTF8String(name);
-        }
-        if (!PyString_Check(name)) {    
-            PyErr_SetString(PyExc_TypeError, "Non-string notification names are not permitted.");
-            return NULL;
-        }
-         // Get a string representation of the notification name
-        const char * name_string = PyString_AsString(name);
-        if (!name_string) {
-            PyErr_SetString(PyExc_TypeError, "An unknown error occured while converting string arguments to char *.");
-            return NULL;
-        }
-
-        // Convert that representation to something Carbon will understand.
-        CFStringRef name_strref = CFStringCreateWithCString(kCFAllocatorDefault, name_string, kCFStringEncodingUTF8);
+        char * name_string = NULL;
+        CFStringRef name_strref = CFStringFromPyString(name, &name_string);
+        if (!name_strref) return NULL; // CFStringFromPyString will set an error.
 
         // Add the notification
         AXError error = AXObserverAddNotification(self->_obs, self->_ref, name_strref, self);
@@ -825,7 +780,7 @@ static PyObject * is_trusted(PyObject * self) {
     }
 }
 
-static PyObject * create_application_ref(PyObject * self, PyObject * args, PyObject * kwargs) {
+static AccessibleElement * create_application_ref(PyObject * self, PyObject * args, PyObject * kwargs) {
     static char *kwlist [] = {"pid", NULL};
     pid_t pid;
  
@@ -850,21 +805,16 @@ static PyObject * create_application_ref(PyObject * self, PyObject * args, PyObj
         return NULL;
     }
 	
-    AccessibleElement * result = elementWithRef(&ref);
- 
-    return (PyObject *) result;
+    return elementWithRef(&ref);
 }
 
-static PyObject * create_systemwide_ref(PyObject * self, PyObject * args) {
-
+static AccessibleElement * create_systemwide_ref(PyObject * self, PyObject * args) {
     AXUIElementRef ref = AXUIElementCreateSystemWide();
-    AccessibleElement * result = elementWithRef(&ref);
- 
-    return (PyObject *) result;
+    return elementWithRef(&ref);
 }
 
-static PyObject * element_at_position(PyObject * self, PyObject * args, PyObject * kwargs) {
-    PyObject * result = NULL;
+static AccessibleElement * element_at_position(PyObject * self, PyObject * args, PyObject * kwargs) {
+    AccessibleElement * result = NULL;
     AccessibleElement * parent = NULL;
     float x, y;
 
@@ -1060,7 +1010,7 @@ static PyObject * parseCFTypeRef(const CFTypeRef value) {
     return result;
 }
 
-static void handleAXErrors(char * attribute_name, AXError error) {
+static void handleAXErrors(const char * attribute_name, AXError error) {
     switch(error) {
         case kAXErrorCannotComplete:
             PyErr_SetString(PyExc_Exception, formattedMessage("The request for %s could not be completed (perhaps the application is not responding?).", attribute_name));
