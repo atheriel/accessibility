@@ -691,7 +691,7 @@ static PyMethodDef AccessibleElement_methods[] = {
     {"can_set", (PyCFunction) AccessibleElement_can_set, METH_VARARGS, can_set_docstring},
     {"is_alive", (PyCFunction) AccessibleElement_is_alive, METH_NOARGS, is_alive_docstring},
     {"watch", (PyCFunction) AccessibleElement_watch, METH_VARARGS, ""},
-    {NULL, NULL}
+    {NULL, NULL, 0, NULL}
 };
 
 static PyMemberDef AccessibleElement_members[] = {
@@ -787,7 +787,7 @@ static AccessibleElement * create_application_ref(PyObject * self, PyObject * ar
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i", kwlist, &pid))
         return NULL;
 
-	AXUIElementRef ref = AXUIElementCreateApplication(pid);
+    AXUIElementRef ref = AXUIElementCreateApplication(pid);
     
     // Just check to see if the element responds to a basic attribute request
     // This might cause problems in some extreme cases, but it also alleviates
@@ -804,7 +804,7 @@ static AccessibleElement * create_application_ref(PyObject * self, PyObject * ar
         PyErr_SetString(PyExc_ValueError, "This PID does not seem to be associated with a valid process.");
         return NULL;
     }
-	
+    
     return elementWithRef(&ref);
 }
 
@@ -842,24 +842,24 @@ static AccessibleElement * element_at_position(PyObject * self, PyObject * args,
  
 static PyMethodDef methods[] = {
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_9
-	{"is_enabled", (PyCFunction) is_enabled, METH_VARARGS|METH_KEYWORDS, is_enabled_docstring},
+    {"is_enabled", (PyCFunction) is_enabled, METH_VARARGS|METH_KEYWORDS, is_enabled_docstring},
 #else
     {"is_enabled", (PyCFunction) is_enabled, METH_NOARGS, "is_enabled()\n\nCheck if accessibility has been enabled on the system."},
 #endif
     {"is_trusted", (PyCFunction) is_trusted, METH_NOARGS, "is_trusted()\n\nCheck if this application is a trusted process."},
-	{"create_application_ref", create_application_ref, METH_VARARGS|METH_KEYWORDS, "create_application_ref(pid)\n\nCreate an accessibile application with the given PID."},
-	{"create_systemwide_ref", create_systemwide_ref, METH_NOARGS, "create_systemwide_ref()\n\nGet a system-wide accessible element reference."},
+    {"create_application_ref", create_application_ref, METH_VARARGS|METH_KEYWORDS, "create_application_ref(pid)\n\nCreate an accessibile application with the given PID."},
+    {"create_systemwide_ref", create_systemwide_ref, METH_NOARGS, "create_systemwide_ref()\n\nGet a system-wide accessible element reference."},
     {"element_at_position", (PyCFunction) element_at_position, METH_VARARGS|METH_KEYWORDS, element_at_position_docstring},
-	{NULL, NULL, 0, NULL}
+    {NULL, NULL, 0, NULL}
 };
  
 PyMODINIT_FUNC
 initaccessibility(void) {
-	PyObject* m;
+    PyObject* m;
 
     AccessibleElement_type.tp_new = PyType_GenericNew;
     if (PyType_Ready(&AccessibleElement_type) < 0)
-    	return;
+        return;
 
     m = Py_InitModule3("accessibility", methods, "Extension module that wraps the Accessibility API for Mac OS X.");
 
