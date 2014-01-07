@@ -1,2 +1,5 @@
 build/
+dist/
 test/
+
+*.egg-info
