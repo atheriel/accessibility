@@ -10,6 +10,7 @@ else:
 setup(
     name = 'accessibility',
     description = 'Extension module that wraps the Accessibility API for Mac OS X.',
+    long_description = open('README.rst', 'r').read(),
     version = '0.3.1',
     author = 'Aaron Jacobs',
     author_email = 'atheriel@gmail.com',
