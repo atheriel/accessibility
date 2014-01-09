@@ -62,6 +62,15 @@ CFStringRef CFStringFromPyString(PyObject * str, char ** c_string) {
 /* Accessible Element class
 ======== */
 
+PyDoc_STRVAR(module_docstring,
+"Extension module that wraps the Accessibility API for Mac OS X.\n\n\
+This module provides the :py:class:`AccessibleElement` class to interact with \n\
+the references exposed by the Accessibility API (for example, other running \n\
+applications). One can query these references for their attributes, modify \n\
+these attributes, and watch for notifcations emitted by these references.\n\
+\n\
+.. codeauthor:: Aaron Jacobs <atheriel@gmail.com>");
+
 PyDoc_STRVAR(AccessibleElement_docstring,
 "An AccessibleElement object is a wrapper around the Accessibility API's basic \n\
 unit, the `AXUIElementRef`_. It provides access to most of the API's functionality \n\
@@ -902,7 +911,7 @@ static PyMethodDef methods[] = {
 static struct PyModuleDef module = {
     PyModuleDef_HEAD_INIT,
     "accessibility",
-    "Extension module that wraps the Accessibility API for Mac OS X.",
+    module_docstring,
     (Py_ssize_t) -1,
     methods,
     NULL,
@@ -915,7 +924,7 @@ PyMODINIT_FUNC PyInit_accessibility(void) {
     PyObject * m = PyModule_Create(&module);
 #else
 PyMODINIT_FUNC initaccessibility(void) {
-    PyObject * m = Py_InitModule3("accessibility", methods, "Extension module that wraps the Accessibility API for Mac OS X.");
+    PyObject * m = Py_InitModule3("accessibility", methods, module_docstring);
     if (m == NULL) {
         return;
     }
@@ -931,6 +940,13 @@ PyMODINIT_FUNC initaccessibility(void) {
     Py_INCREF(&AccessibleElement_type);
     PyModule_AddObject(m, "AccessibleElement", (PyObject *) &AccessibleElement_type);
     PyModule_AddObject(m, "DEFAULT_TIMEOUT", PyFloat_FromDouble(0.0));
+#if PY_MAJOR_VERSION >= 3
+    PyModule_AddObject(m, "__author__", PyBytes_FromString("Aaron Jacobs <atheriel@gmail.com>"));
+    PyModule_AddObject(m, "__version__", PyBytes_FromString("0.3.2"));
+#else
+    PyModule_AddObject(m, "__author__", PyString_FromString("Aaron Jacobs <atheriel@gmail.com>"));
+    PyModule_AddObject(m, "__version__", PyString_FromString("0.3.2"));
+#endif
 
     InvalidUIElementError = PyErr_NewExceptionWithDoc("accessibility.InvalidUIElementError", InvalidUIElementError_docstring, PyExc_ValueError, NULL);
     PyModule_AddObject(m, "InvalidUIElementError", InvalidUIElementError);
