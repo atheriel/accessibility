@@ -88,10 +88,14 @@ form:\n\
         # or, using the element as a dictionary:\n\
         window_element['AXSize'] == (100, 100)\n\
 \n\
+Notifications emitted by applications can also be handled by using the \n\
+:py:func:`watch` and :py:func:`set_callback` methods.\n\
+\n\
 Some care has been taken to manage the memory used by the CFTypeRef system, but \n\
 this has not been rigorously tested.\n\
 \n\
-.. _AXUIElementRef: https://developer.apple.com/library/mac/documentation/ApplicationServices/Reference/AXUIElement_header_reference/Reference/reference.html");
+.. _AXUIElementRef: https://developer.apple.com/library/mac/documentation/Appli\
+cationServices/Reference/AXUIElement_header_reference/Reference/reference.html");
 
 typedef struct {
     PyObject_HEAD
@@ -194,6 +198,21 @@ This is the underlying method called when using an AccessibleElement as a dict.\
 
 static PyObject * AccessibleElement_set(AccessibleElement *, PyObject *);
 
+PyDoc_STRVAR(set_callback_docstring, "set_callback(func)\n\n\
+Sets the callback for handling notifications watched with :py:func:`watch` when \n\
+they arise.\n\
+\n\
+:param func: The function to call when watched notifications occur.\n\
+\n\
+The correct format for a callback is as follows:\n\
+\n\
+.. code-block:: python\n\
+\n\
+    def func(element, notification):\n\
+        print element.pid, notification\n\
+\n\
+    myelement.set_callback(func)");
+
 static PyObject * AccessibleElement_set_callback(AccessibleElement *, PyObject *);
 
 PyDoc_STRVAR(set_timeout_docstring, "set_timeout(timeout)\n\n\
@@ -209,6 +228,18 @@ element like so:\n\
 The default value can be restored by passing the ``DEFAULT_TIMEOUT`` value.");
 
 static PyObject * AccessibleElement_set_timeout(AccessibleElement *, PyObject *);
+
+PyDoc_STRVAR(watch_docstring, "watch(*notifications)\n\n\
+Watches for the given notifications. When they occur, the callback passed to \n\
+:py:func:`set_callback` will be executed.\n\
+\n\
+:param str notifications: The name (or series of names) of the notification to watch.\n\
+\n\
+For example, to watch for when windows are moved or resized in an application:\n\
+\n\
+.. code-block:: python\n\
+\n\
+    myelement.watch('AXMoved', 'AXResized')");
 
 static PyObject * AccessibleElement_watch(AccessibleElement *, PyObject *);
 
@@ -697,11 +728,11 @@ static PyMethodDef AccessibleElement_methods[] = {
     {"count", (PyCFunction) AccessibleElement_count, METH_VARARGS, count_docstring},
     {"get", (PyCFunction) AccessibleElement_get, METH_VARARGS, get_docstring},
     {"set", (PyCFunction) AccessibleElement_set, METH_VARARGS, set_docstring},
-    {"set_callback", (PyCFunction) AccessibleElement_set_callback, METH_VARARGS, ""},
+    {"set_callback", (PyCFunction) AccessibleElement_set_callback, METH_VARARGS, set_callback_docstring},
     {"set_timeout", (PyCFunction) AccessibleElement_set_timeout, METH_VARARGS, set_timeout_docstring},
     {"can_set", (PyCFunction) AccessibleElement_can_set, METH_VARARGS, can_set_docstring},
     {"is_alive", (PyCFunction) AccessibleElement_is_alive, METH_NOARGS, is_alive_docstring},
-    {"watch", (PyCFunction) AccessibleElement_watch, METH_VARARGS, ""},
+    {"watch", (PyCFunction) AccessibleElement_watch, METH_VARARGS, watch_docstring},
     {NULL, NULL, 0, NULL}
 };
 
