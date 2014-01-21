@@ -732,16 +732,90 @@ static PyObject * AccessibleElement_watch(AccessibleElement * self, PyObject * a
     Py_RETURN_NONE;
 }
 
+static PyObject * AccessibleElement_actions(AccessibleElement * self, PyObject * args) {
+    PyObject * result = NULL;
+    CFArrayRef names;
+    AXError error = AXUIElementCopyActionNames(self->_ref, &names);
+    if (error == kAXErrorSuccess) {
+        result = parseCFTypeRef(names);
+    } else {
+        handleAXErrors("action names", error);
+    }
+
+    if (names != NULL) CFRelease(names);
+    return result;
+}
+
+static PyObject * AccessibleElement_action_description(AccessibleElement * self, PyObject * args) {
+    Py_ssize_t attribute_count = PyTuple_Size(args);
+    if (attribute_count != 1) {
+        PyErr_SetString(PyExc_ValueError, "An action name must be specified to retrieve its description.");
+        return NULL;
+    }
+    // The first argument should be a string
+    PyObject * name = PyTuple_GetItem(args, (Py_ssize_t) 0);
+    if (!name) {
+        return NULL; // PyTuple_GetItem will set an Index error.
+    }
+    char * name_string = NULL;
+    CFStringRef name_strref = CFStringFromPyString(name, &name_string);
+    if (!name_strref) return NULL; // CFStringFromPyString will set an error.
+
+    // Check for the action's description
+    CFStringRef descr;
+    AXError error = AXUIElementCopyActionDescription(self->_ref, name_strref, &descr);
+    if (name_strref != NULL) CFRelease(name_strref);
+
+    if (error != kAXErrorSuccess) {
+        handleAXErrors(name_string, error);
+        return NULL;
+    }
+    return parseCFTypeRef(descr);
+}
+
+static PyObject * AccessibleElement_perform_action(AccessibleElement * self, PyObject * args) {
+    Py_ssize_t attribute_count = PyTuple_Size(args);
+    if (attribute_count != 1) {
+        PyErr_SetString(PyExc_ValueError, "An action name must be specified.");
+        return NULL;
+    }
+    // The first argument should be a string
+    PyObject * name = PyTuple_GetItem(args, (Py_ssize_t) 0);
+    if (!name) {
+        return NULL; // PyTuple_GetItem will set an Index error.
+    }
+    char * name_string = NULL;
+    CFStringRef name_strref = CFStringFromPyString(name, &name_string);
+    if (!name_strref) return NULL; // CFStringFromPyString will set an error.
+
+    // Check for the action's description
+    AXError error = AXUIElementPerformAction(self->_ref, name_strref);
+    if (name_strref != NULL) CFRelease(name_strref);
+
+    if (error != kAXErrorSuccess) {
+        handleAXErrors(name_string, error);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef AccessibleElement_methods[] = {
+    // Attributes
     {"keys", (PyCFunction) AccessibleElement_keys, METH_NOARGS, keys_docstring},
     {"count", (PyCFunction) AccessibleElement_count, METH_VARARGS, count_docstring},
     {"get", (PyCFunction) AccessibleElement_get, METH_VARARGS, get_docstring},
     {"set", (PyCFunction) AccessibleElement_set, METH_VARARGS, set_docstring},
-    {"set_callback", (PyCFunction) AccessibleElement_set_callback, METH_VARARGS, set_callback_docstring},
-    {"set_timeout", (PyCFunction) AccessibleElement_set_timeout, METH_VARARGS, set_timeout_docstring},
     {"can_set", (PyCFunction) AccessibleElement_can_set, METH_VARARGS, can_set_docstring},
-    {"is_alive", (PyCFunction) AccessibleElement_is_alive, METH_NOARGS, is_alive_docstring},
+    // Notification API
     {"watch", (PyCFunction) AccessibleElement_watch, METH_VARARGS, watch_docstring},
+    {"set_callback", (PyCFunction) AccessibleElement_set_callback, METH_VARARGS, set_callback_docstring},
+    // Action API
+    {"actions", (PyCFunction) AccessibleElement_actions, METH_NOARGS, ""},
+    {"action_description", (PyCFunction) AccessibleElement_action_description, METH_VARARGS, ""},
+    {"perform_action", (PyCFunction) AccessibleElement_perform_action, METH_VARARGS, ""},
+    // Misc
+    {"set_timeout", (PyCFunction) AccessibleElement_set_timeout, METH_VARARGS, set_timeout_docstring},
+    {"is_alive", (PyCFunction) AccessibleElement_is_alive, METH_NOARGS, is_alive_docstring},
     {NULL, NULL, 0, NULL}
 };
 
@@ -1107,6 +1181,10 @@ static void handleAXErrors(const char * attribute_name, AXError error) {
 
         case kAXErrorAttributeUnsupported:
             PyErr_SetString(PyExc_KeyError, formattedMessage("This element does not possess the attribute %s.", attribute_name));
+            break;
+
+        case kAXErrorActionUnsupported:
+            PyErr_SetString(PyExc_KeyError, formattedMessage("This element does not support the action %s. Note: the system-wide element does not support ANY actions.", attribute_name));
             break;
 
         case kAXErrorIllegalArgument:
