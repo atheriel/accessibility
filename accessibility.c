@@ -100,6 +100,10 @@ form:\n\
 Notifications emitted by applications can also be handled by using the \n\
 :py:func:`watch` and :py:func:`set_callback` methods.\n\
 \n\
+One may also examine and perform the available actions for the element with the \n\
+:py:func:`actions`, :py:func:`action_description`, and :py:func:`perform_action` \n\
+methods.\n\
+\n\
 Some care has been taken to manage the memory used by the CFTypeRef system, but \n\
 this has not been rigorously tested.\n\
 \n\
@@ -251,6 +255,23 @@ For example, to watch for when windows are moved or resized in an application:\n
     myelement.watch('AXMoved', 'AXResized')");
 
 static PyObject * AccessibleElement_watch(AccessibleElement *, PyObject *);
+
+PyDoc_STRVAR(actions_docstring, "actions()\n\n\
+Retrieves the list of actions available for the element. This is similar to the \n\
+list of attributes that is returned by the :py:func:`keys` method.");
+
+static PyObject * AccessibleElement_actions(AccessibleElement *, PyObject *);
+
+PyDoc_STRVAR(action_desciption_docstring, "action_description(action_name)\n\n\
+Retrieves the description of an action available for the element. Note that \n\
+descriptions are implemented by the vendors, and so are often unhelpful.");
+
+static PyObject * AccessibleElement_action_description(AccessibleElement *, PyObject *);
+
+PyDoc_STRVAR(perform_action_docstring, "perform_action(action_name)\n\n\
+Performs the specified action on the element, if it is possible to do so.");
+
+static PyObject * AccessibleElement_perform_action(AccessibleElement *, PyObject *);
 
 /* Module functions
 ======== */
@@ -810,9 +831,9 @@ static PyMethodDef AccessibleElement_methods[] = {
     {"watch", (PyCFunction) AccessibleElement_watch, METH_VARARGS, watch_docstring},
     {"set_callback", (PyCFunction) AccessibleElement_set_callback, METH_VARARGS, set_callback_docstring},
     // Action API
-    {"actions", (PyCFunction) AccessibleElement_actions, METH_NOARGS, ""},
-    {"action_description", (PyCFunction) AccessibleElement_action_description, METH_VARARGS, ""},
-    {"perform_action", (PyCFunction) AccessibleElement_perform_action, METH_VARARGS, ""},
+    {"actions", (PyCFunction) AccessibleElement_actions, METH_NOARGS, actions_docstring},
+    {"action_description", (PyCFunction) AccessibleElement_action_description, METH_VARARGS, action_desciption_docstring},
+    {"perform_action", (PyCFunction) AccessibleElement_perform_action, METH_VARARGS, perform_action_docstring},
     // Misc
     {"set_timeout", (PyCFunction) AccessibleElement_set_timeout, METH_VARARGS, set_timeout_docstring},
     {"is_alive", (PyCFunction) AccessibleElement_is_alive, METH_NOARGS, is_alive_docstring},
