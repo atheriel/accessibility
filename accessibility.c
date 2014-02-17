@@ -930,10 +930,11 @@ static PyObject * is_trusted(PyObject * self) {
 }
 
 static AccessibleElement * create_application_ref(PyObject * self, PyObject * args, PyObject * kwargs) {
-    static char *kwlist [] = {"pid", NULL};
+    static char *kwlist [] = {"pid", "force", NULL};
     pid_t pid;
+    int force = 0;
  
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i", kwlist, &pid))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|i", kwlist, &pid, &force))
         return NULL;
 
     AXUIElementRef ref = AXUIElementCreateApplication(pid);
@@ -947,10 +948,14 @@ static AccessibleElement * create_application_ref(PyObject * self, PyObject * ar
     if (value != NULL) CFRelease(value);
     
     if (error == kAXErrorAPIDisabled) {
-        PyErr_SetString(APIDisabledError, "This PID does not respond to Accessibility requests -- perhaps Accessibility is not enabled on the system?");
+        PyErr_SetString(APIDisabledError, "The element created with this PID does not respond to Accessibility requests -- perhaps Accessibility is not enabled on the system?");
         return NULL;
-    } else if (error != kAXErrorSuccess) {
-        PyErr_SetString(PyExc_ValueError, "This PID does not seem to be associated with a valid process.");
+    } else if (error != kAXErrorSuccess && force == 0) {
+        PyErr_SetString(PyExc_ValueError, formattedMessage(
+           "The element does not respond to a request for its AXRole, which is \n\
+supposedly required of all Accessibility API-enabled objects. For this reason, \n\
+it is inadvisable to try and create an AccessibleElement for this PID. You may \n\
+override this failure case by passing ``force = True`` to this function.", error));
         return NULL;
     }
     
@@ -996,7 +1001,7 @@ static PyMethodDef methods[] = {
     {"is_enabled", (PyCFunction) is_enabled, METH_NOARGS, "is_enabled()\n\nCheck if accessibility has been enabled on the system."},
 #endif
     {"is_trusted", (PyCFunction) is_trusted, METH_NOARGS, "is_trusted()\n\nCheck if this application is a trusted process."},
-    {"create_application_ref", (PyCFunction) create_application_ref, METH_VARARGS|METH_KEYWORDS, "create_application_ref(pid)\n\nCreate an accessibile application with the given PID."},
+    {"create_application_ref", (PyCFunction) create_application_ref, METH_VARARGS|METH_KEYWORDS, "create_application_ref(pid, force = False)\n\nCreate an accessibile application with the given PID."},
     {"create_systemwide_ref", (PyCFunction) create_systemwide_ref, METH_NOARGS, "create_systemwide_ref()\n\nGet a system-wide accessible element reference."},
     {"element_at_position", (PyCFunction) element_at_position, METH_VARARGS|METH_KEYWORDS, element_at_position_docstring},
     {NULL, NULL, 0, NULL}
