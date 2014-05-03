@@ -336,8 +336,9 @@ static void NotifcationCallback(AXObserverRef, AXUIElementRef, CFStringRef, void
 ======== */
 
 static void AccessibleElement_dealloc(AccessibleElement * self) {
-    // Use CFRelease to release for the AXUIElementRef
+    // Use CFRelease to release for the AXUIElementRef, AXObserverRef
     if (self->_ref != NULL) CFRelease(self->_ref);
+    if (self->_obs != NULL) CFRelease(self->_obs);
     Py_XDECREF(self->pid);
 #if PY_MAJOR_VERSION >= 3
     Py_TYPE(self)->tp_free((PyObject *) self);
