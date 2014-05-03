@@ -35,6 +35,7 @@ setup(
         include_dirs = [header_dir],
         # Uncomment the next line to include debug symbols while compiling
         # extra_compile_args = ['-g'],
+        extra_compile_args = ['-Wno-error=unused-command-line-argument-hard-error-in-future'],
         extra_link_args = ['-framework', 'ApplicationServices', '-v']
     )],
 
