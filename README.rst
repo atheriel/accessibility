@@ -12,8 +12,8 @@ Documentation
 -------------
 The module includes extensive docstrings, complete with examples in many cases. These can be can be browsed using Python's ``help`` command, or one can compile the Sphinx documentation. For the latter: 
 
-1. Initialize the git submodule with ``git submodule init`` to retrieve the custom Sphinx theme.
-2. ``cd docs``
+1. ``cd docs``
+2. Initialize the git submodule with ``git submodule update --init --recursive`` to retrieve the custom Sphinx theme.
 3. ``make html`` and then browse the documentation in ``docs/_build/html``.
 
 License
