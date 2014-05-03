@@ -1043,10 +1043,10 @@ PyMODINIT_FUNC initaccessibility(void) {
     PyModule_AddObject(m, "DEFAULT_TIMEOUT", PyFloat_FromDouble(0.0));
 #if PY_MAJOR_VERSION >= 3
     PyModule_AddObject(m, "__author__", PyBytes_FromString("Aaron Jacobs <atheriel@gmail.com>"));
-    PyModule_AddObject(m, "__version__", PyBytes_FromString("0.3.2"));
+    PyModule_AddObject(m, "__version__", PyBytes_FromString("0.4.0"));
 #else
     PyModule_AddObject(m, "__author__", PyString_FromString("Aaron Jacobs <atheriel@gmail.com>"));
-    PyModule_AddObject(m, "__version__", PyString_FromString("0.3.2"));
+    PyModule_AddObject(m, "__version__", PyString_FromString("0.4.0"));
 #endif
 
     InvalidUIElementError = PyErr_NewExceptionWithDoc("accessibility.InvalidUIElementError", InvalidUIElementError_docstring, PyExc_ValueError, NULL);
