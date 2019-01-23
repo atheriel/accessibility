@@ -6,6 +6,8 @@ if mac_ver()[0].startswith('10.9'):
     header_dir = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Headers'  # noqa
 elif mac_ver()[0].startswith('10.12'):
     header_dir = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Headers'  # noqa
+elif mac_ver()[0].startswith('10.14'):
+    header_dir = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Headers'
 else:
     header_dir = '/System/Library/Frameworks/ApplicationServices.framework/Frameworks/HIServices.framework/Headers'
 
